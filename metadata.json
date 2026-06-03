@@ -1,0 +1,6 @@
+{
+  "name": "Block Sandbox 2D",
+  "description": "A side-view 2D block-building sandbox survival game with crafting, weather, animals, and day-night survival.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
