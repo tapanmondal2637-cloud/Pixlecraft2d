@@ -1,7 +1,7 @@
 package com.example.ui
 
 import androidx.compose.animation.*
-import androidx.compose.foundation.background
+import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -24,6 +24,7 @@ import androidx.compose.ui.window.Dialog
 import com.example.data.SavedWorld
 import com.example.game.Achievement
 import com.example.game.GameStats
+import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.*
 import kotlin.random.Random
@@ -34,10 +35,13 @@ fun MainMenuScreen(
     savedWorlds: List<SavedWorld>,
     onCreateWorld: (name: String, seed: Long, mode: String) -> Unit,
     onLoadWorld: (SavedWorld) -> Unit,
-    onDeleteWorld: (SavedWorld) -> Unit
+    onDeleteWorld: (SavedWorld) -> Unit,
+    onHostMultiplayer: (SavedWorld, String, String) -> Unit, // world, code, nick
+    onJoinMultiplayer: (String, String) -> Unit // code, nick
 ) {
     var showCreateDialog by remember { mutableStateOf(false) }
     var showStatsDialog by remember { mutableStateOf(false) }
+    var showMultiplayerDialog by remember { mutableStateOf(false) }
 
     // Aggregate statistics across all saves
     val totalMined = savedWorlds.sumOf { it.statsText.split(":").firstOrNull()?.toIntOrNull() ?: 0 }
@@ -108,34 +112,48 @@ fun MainMenuScreen(
             // Action Buttons Panel
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Button(
                     onClick = { showCreateDialog = true },
                     modifier = Modifier
                         .weight(1f)
-                        .height(56.dp)
+                        .height(52.dp)
                         .testTag("new_world_btn"),
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(10.dp)
                 ) {
                     Icon(Icons.Default.Add, contentDescription = "Add Icon", tint = Color.White)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("NEW WORLD", fontWeight = FontWeight.Bold, color = Color.White)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("NEW WORLD", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 11.sp)
+                }
+
+                Button(
+                    onClick = { showMultiplayerDialog = true },
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(52.dp)
+                        .testTag("multiplayer_menu_btn"),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD84315)),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Icon(Icons.Default.Language, contentDescription = "Multiplayer Icon", tint = Color.White)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("MULTIPLAYER", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 11.sp)
                 }
 
                 Button(
                     onClick = { showStatsDialog = true },
                     modifier = Modifier
-                        .weight(1f)
-                        .height(56.dp)
+                        .weight(1.1f)
+                        .height(52.dp)
                         .testTag("stats_achievements_btn"),
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0F4C81)),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(10.dp)
                 ) {
                     Icon(Icons.Default.EmojiEvents, contentDescription = "Achievements Icon", tint = Color.White)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("STATS / TROPHIES", fontWeight = FontWeight.Bold, color = Color.White)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("STATS / TROPHIES", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 11.sp)
                 }
             }
 
@@ -226,6 +244,254 @@ fun MainMenuScreen(
                 recentWorldCount = savedWorlds.size,
                 onDismiss = { showStatsDialog = false }
             )
+        }
+
+        if (showMultiplayerDialog) {
+            MultiplayerDialog(
+                savedWorlds = savedWorlds,
+                onHostLobby = { world, code, nickname ->
+                    showMultiplayerDialog = false
+                    onHostMultiplayer(world, code, nickname)
+                },
+                onJoinLobby = { code, nickname ->
+                    showMultiplayerDialog = false
+                    onJoinMultiplayer(code, nickname)
+                },
+                onDismiss = { showMultiplayerDialog = false }
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MultiplayerDialog(
+    savedWorlds: List<SavedWorld>,
+    onHostLobby: (SavedWorld, String, String) -> Unit,
+    onJoinLobby: (String, String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var txtPlayerName by remember { mutableStateOf("Crafter_" + Random.nextInt(100, 999)) }
+    var txtRoomCodeInput by remember { mutableStateOf("") }
+    var selectedWorldToHost by remember { mutableStateOf<SavedWorld?>(savedWorlds.firstOrNull()) }
+    var isMatchmakingActive by remember { mutableStateOf(false) }
+    var matchmakingPlayers by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(isMatchmakingActive) {
+        if (isMatchmakingActive) {
+            var counter = 0
+            while (counter < 4 && isMatchmakingActive) {
+                delay(1000)
+                counter++
+                matchmakingPlayers = Random.nextInt(12, 45)
+            }
+            if (isMatchmakingActive) {
+                // Done matching, join room code
+                val matchedRoom = listOf("A3XB", "M9XP", "G2RD", "S4ND").random()
+                isMatchmakingActive = false
+                onJoinLobby(matchedRoom, txtPlayerName)
+            }
+        }
+    }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF0F1B29)),
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.85f)
+                .padding(8.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(20.dp)
+            ) {
+                // Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.Language, contentDescription = "Multiplayer Logo Icon", tint = Color(0xFF00FFCC))
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = "MULTIPLAYER REALM",
+                        color = Color.White,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, contentDescription = "Close Multiplayer", tint = Color.LightGray)
+                    }
+                }
+
+                Divider(color = Color.DarkGray, modifier = Modifier.padding(vertical = 8.dp))
+
+                if (isMatchmakingActive) {
+                    // Matchmaking circular pulse radar style
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        CircularProgressIndicator(color = Color(0xFF00FFCC), strokeWidth = 4.dp, modifier = Modifier.size(56.dp))
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text("GRID MATCHMAKING ACTIVE", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 16.sp)
+                        Text("Polling Wi-Fi / Mobile nodes...", color = Color.LightGray, fontSize = 12.sp)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("Active online survivors: $matchmakingPlayers", color = Color(0xFF00E676), fontSize = 13.sp, fontFamily = FontFamily.Monospace)
+                        
+                        Spacer(modifier = Modifier.height(24.dp))
+                        Button(
+                            onClick = { isMatchmakingActive = false },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE57373))
+                        ) {
+                            Text("ABORT MATCHMAKING", color = Color.White, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        // 1. Customized player nickname
+                        item {
+                            Card(colors = CardDefaults.cardColors(containerColor = Color(0x1AFFFFFF))) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Text("PLAYER NICKNAME", color = Color(0xFFA0C0D0), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    OutlinedTextField(
+                                        value = txtPlayerName,
+                                        onValueChange = { txtPlayerName = it },
+                                        singleLine = true,
+                                        colors = OutlinedTextFieldDefaults.colors(
+                                            focusedTextColor = Color.White,
+                                            unfocusedTextColor = Color.White,
+                                            focusedBorderColor = Color(0xFF00FFCC)
+                                        ),
+                                        modifier = Modifier.fillMaxWidth().testTag("multi_player_name")
+                                    )
+                                }
+                            }
+                        }
+
+                        // 2. Host private server
+                        item {
+                            Card(colors = CardDefaults.cardColors(containerColor = Color(0x1AFFFFFF))) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Text("HOST MULTIPLAYER WORLD", color = Color(0xFFA0C0D0), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    
+                                    if (savedWorlds.isEmpty()) {
+                                        Text("Generate a singleplayer world first to act as server seed!", color = Color.Yellow, fontSize = 11.sp)
+                                    } else {
+                                        // Simple scroll row of saved world nodes
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            savedWorlds.forEach { world ->
+                                                val isSelected = selectedWorldToHost == world
+                                                Box(
+                                                    modifier = Modifier
+                                                        .border(
+                                                            width = if (isSelected) 2.dp else 1.dp,
+                                                            color = if (isSelected) Color(0xFF00FFCC) else Color.Gray,
+                                                            shape = RoundedCornerShape(6.dp)
+                                                        )
+                                                        .background(if (isSelected) Color(0x3300FFCC) else Color.Transparent)
+                                                        .clickable { selectedWorldToHost = world }
+                                                        .padding(8.dp)
+                                                ) {
+                                                    Text(world.name, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                                }
+                                            }
+                                        }
+
+                                        Spacer(modifier = Modifier.height(10.dp))
+
+                                        Button(
+                                            onClick = {
+                                                selectedWorldToHost?.let {
+                                                    // Generate room code
+                                                    val alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+                                                    val generatedCode = (1..4).map { alphabet.random() }.joinToString("")
+                                                    // Start host
+                                                    onHostLobby(it, generatedCode, txtPlayerName)
+                                                }
+                                            },
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
+                                            modifier = Modifier.fillMaxWidth().testTag("host_lobby_btn")
+                                        ) {
+                                            Icon(Icons.Default.CloudQueue, contentDescription = null, tint = Color.White)
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text("CREATE PRIVATE ROOM (HOST)", color = Color.White, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // 3. Connect via Room code OR matchmaking QuickJoin
+                        item {
+                            Card(colors = CardDefaults.cardColors(containerColor = Color(0x1AFFFFFF))) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Text("JOIN ONLINE REALM", color = Color(0xFFA0C0D0), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        OutlinedTextField(
+                                            value = txtRoomCodeInput,
+                                            onValueChange = { if (it.length <= 4) txtRoomCodeInput = it.uppercase() },
+                                            placeholder = { Text("M7XP", color = Color.Gray, fontSize = 12.sp) },
+                                            singleLine = true,
+                                            colors = OutlinedTextFieldDefaults.colors(
+                                                focusedTextColor = Color.White,
+                                                unfocusedTextColor = Color.White,
+                                                focusedBorderColor = Color(0xFF00FFCC)
+                                            ),
+                                            modifier = Modifier.weight(1f).testTag("join_room_code_input")
+                                        )
+
+                                        Button(
+                                            onClick = {
+                                                if (txtRoomCodeInput.length == 4) {
+                                                    onJoinLobby(txtRoomCodeInput, txtPlayerName)
+                                                }
+                                            },
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E676)),
+                                            enabled = txtRoomCodeInput.length == 4,
+                                            modifier = Modifier.testTag("join_lobby_btn")
+                                        ) {
+                                            Text("JOIN CODE", color = Color.Black, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(10.dp))
+
+                                    Button(
+                                        onClick = { isMatchmakingActive = true },
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0288D1)),
+                                        modifier = Modifier.fillMaxWidth().testTag("quick_matchmake_btn")
+                                    ) {
+                                        Icon(Icons.Default.Explore, contentDescription = null, tint = Color.White)
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("QUICK MATCHMAKING (WI-FI/4G)", color = Color.White, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }

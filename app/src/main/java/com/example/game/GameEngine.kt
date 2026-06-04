@@ -10,6 +10,100 @@ import kotlin.random.Random
 
 class GameEngine {
 
+    var multiplayerManager: MultiplayerManager? = null
+
+    fun initMultiplayerCallbacks(manager: MultiplayerManager) {
+        multiplayerManager = manager
+        
+        manager.onWorldSyncReceived = { blocksText, seed, mode, daytime ->
+            loadWorldFromText(blocksText, seed, mode, daytime)
+        }
+        
+        manager.onClientHitEnemy = { mobId, damage ->
+            val mob = mobs.find { it.id == mobId }
+            if (mob != null) {
+                mob.health -= damage
+                mob.vx = if (Random.nextBoolean()) -4f else 4f
+                mob.vy = -3f
+                spawnMiningSparks(mob.x + 0.4f, mob.y + 0.8f, Color.Red)
+                if (mob.health <= 0f) {
+                    stats.mobsKilled++
+                    mobs.remove(mob)
+                    triggerPopup("Mob Slayed by Ally!")
+                }
+            }
+        }
+        
+        manager.onHostEnemyUpdate = { mobId, x, y, vx, vy, health ->
+            if (!manager.isHost) {
+                val mob = mobs.find { it.id == mobId }
+                if (mob != null) {
+                    mob.x = x
+                    mob.y = y
+                    mob.vx = vx
+                    mob.vy = vy
+                    mob.health = health
+                } else {
+                    val mobType = when {
+                        mobId.contains("ZOMBIE") -> MobType.ZOMBIE
+                        mobId.contains("SKELETON") -> MobType.SKELETON
+                        mobId.contains("SLIME") -> MobType.SLIME
+                        mobId.contains("COW") -> MobType.COW
+                        mobId.contains("SHEEP") -> MobType.SHEEP
+                        else -> MobType.CHICKEN
+                    }
+                    mobs.add(
+                        Mob(
+                            id = mobId,
+                            type = mobType,
+                            x = x,
+                            y = y,
+                            vx = vx,
+                            vy = vy,
+                            health = health,
+                            maxHealth = if (mobId.contains("ZOMBIE") || mobId.contains("SKELETON")) 40f else 25f
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    fun loadWorldFromText(blocksText: String, seed: Long, mode: String, dayTime: Float) {
+        currentSeed = seed
+        gameMode = mode
+        dayTimeSeconds = dayTime
+        mobs.clear()
+        particles.clear()
+        clearMiningTarget()
+
+        val ids = blocksText.split(",")
+        var index = 0
+        for (x in 0 until width) {
+            for (y in 0 until height) {
+                if (index < ids.size - 1) {
+                    val idVal = ids[index].toIntOrNull() ?: BlockType.AIR.id
+                    worldBlocks[x][y] = idVal
+                }
+                index++
+            }
+        }
+        
+        var spawnX = 60f
+        var spawnY = 15f
+        for (y in 0 until height) {
+            if (worldBlocks[60][y] != BlockType.AIR.id && worldBlocks[60][y] != BlockType.WATER.id) {
+                spawnY = (y - 3).toFloat()
+                break
+            }
+        }
+        playerX = spawnX
+        playerY = spawnY
+        playerVx = 0f
+        playerVy = 0f
+        triggerPopup("Multiplayer Sandbox Loaded!")
+    }
+
     // 1. Immutable Map Dimensions
     val width = 120
     val height = 60
@@ -331,6 +425,11 @@ class GameEngine {
         // Apply Player physics
         processPlayerPhysics(deltaTime)
 
+        // Sync coordinates with teammates
+        multiplayerManager?.let { mp ->
+            mp.sendMovement(playerX, playerY, playerVx, playerVy, playerVx < 0f, selectedHotbarIndex)
+        }
+
         // Process Wandering Mob spawns & AI physics
         processMobsAI(deltaTime)
 
@@ -514,6 +613,8 @@ class GameEngine {
 
             stats.blocksMined++
 
+            multiplayerManager?.sendBlockPlacement(gridX, gridY, BlockType.AIR.id)
+
             // Drops directly to inventory
             val dropItem = getBlockDrop(block)
             if (dropItem != null) {
@@ -578,6 +679,8 @@ class GameEngine {
                 inventory[selectedHotbarIndex] = null
             }
         }
+        
+        multiplayerManager?.sendBlockPlacement(gridX, gridY, newBlock.id)
         
         spawnMiningSparks(gridX.toFloat() + 0.5f, gridY.toFloat() + 0.5f, newBlock.color)
         return true
@@ -740,6 +843,12 @@ class GameEngine {
 
     // 9. Mob System Spawning and Updates
     private fun processMobsAI(dt: Float) {
+        val mp = multiplayerManager
+        if (mp != null && !mp.isHost) {
+            // Client: Simply retain incoming synced items, do not run updates
+            return
+        }
+
         // Tick/spawn mobs
         val maxMobs = 10
         val isNight = dayTimeSeconds > 320f && dayTimeSeconds < 560f
@@ -775,7 +884,7 @@ class GameEngine {
 
                 mobs.add(
                     Mob(
-                        id = UUID.randomUUID().toString(),
+                        id = "${type.name}_${UUID.randomUUID()}",
                         type = type,
                         x = rx,
                         y = ry,
@@ -866,6 +975,9 @@ class GameEngine {
                     triggerPopup("Ouch!")
                 }
             }
+
+            // Authoritative Host broadcasts coordinates to clients
+            mp?.broadcastEnemyUpdate(mob.id, mob.type.name, mob.x, mob.y, mob.vx, mob.vy, mob.health)
         }
     }
 
@@ -939,31 +1051,38 @@ class GameEngine {
         while (iterator.hasNext()) {
             val m = iterator.next()
             if (m.x >= attackBoxLeft && m.x <= attackBoxRight && m.y >= attackBoxTop && m.y <= attackBoxBottom) {
-                m.health -= damage
-                
-                // knockback mob
-                m.vx = if (facingLeft) -4.5f else 4.5f
-                m.vy = -3.5f
+                val mp = multiplayerManager
+                if (mp != null && !mp.isHost) {
+                    // Send player hit to Host so the host can process and broadcast health
+                    mp.sendPlayerHitEnemy(m.id, damage)
+                    spawnMiningSparks(m.x + 0.4f, m.y + 0.8f, Color.Red)
+                } else {
+                    m.health -= damage
+                    
+                    // knockback mob
+                    m.vx = if (facingLeft) -4.5f else 4.5f
+                    m.vy = -3.5f
 
-                // Sparks particle spray
-                spawnMiningSparks(m.x + 0.4f, m.y + 0.8f, Color.Red)
+                    // Sparks particle spray
+                    spawnMiningSparks(m.x + 0.4f, m.y + 0.8f, Color.Red)
 
-                if (m.health <= 0f) {
-                    stats.mobsKilled++
-                    iterator.remove()
+                    if (m.health <= 0f) {
+                        stats.mobsKilled++
+                        iterator.remove()
 
-                    // Drops meat/wood on defeat
-                    val animalDrops = when (m.type) {
-                        MobType.COW -> ItemType.RAW_MEAT to Random.nextInt(1, 3)
-                        MobType.SHEEP -> ItemType.RAW_MEAT to 1
-                        MobType.CHICKEN -> ItemType.APPLE to 1 // generic raw bird analog
-                        MobType.ZOMBIE -> ItemType.COAL to 1
-                        MobType.SKELETON -> ItemType.STICK to 2
-                        MobType.SLIME -> ItemType.ITEM_GLASS to 1 // jelly drop Analog
+                        // Drops meat/wood on defeat
+                        val animalDrops = when (m.type) {
+                            MobType.COW -> ItemType.RAW_MEAT to Random.nextInt(1, 3)
+                            MobType.SHEEP -> ItemType.RAW_MEAT to 1
+                            MobType.CHICKEN -> ItemType.APPLE to 1 // generic raw bird analog
+                            MobType.ZOMBIE -> ItemType.COAL to 1
+                            MobType.SKELETON -> ItemType.STICK to 2
+                            MobType.SLIME -> ItemType.ITEM_GLASS to 1 // jelly drop Analog
+                        }
+                        addItemToInventory(animalDrops.first, animalDrops.second)
+                        triggerPopup("Mob Slayed! Loot dropped.")
+                        unlockAchievement("slay_monster")
                     }
-                    addItemToInventory(animalDrops.first, animalDrops.second)
-                    triggerPopup("Mob Slayed! Loot dropped.")
-                    unlockAchievement("slay_monster")
                 }
                 break // Attack one mob per tap
             }

@@ -8,6 +8,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -45,6 +48,7 @@ fun GameView(
     // 1. Interactive States
     var showPauseMenu by remember { mutableStateOf(false) }
     var showInventoryMenu by remember { mutableStateOf(false) }
+    var showChatWindow by remember { mutableStateOf(false) }
     var actionPlayMode by remember { mutableStateOf("MINE") } // "MINE" vs "PLACE"
 
     // Swing arm trigger
@@ -136,6 +140,36 @@ fun GameView(
                 .testTag("game_canvas")
         ) {
             GameRenderer.drawWorld(this, engine, size.width, size.height)
+        }
+
+        // --- Connection / Reconnect Notice banners ---
+        val mp = engine.multiplayerManager
+        val networkState = mp?.networkState?.collectAsState()?.value ?: NetworkState.OFFLINE
+        if (networkState == NetworkState.RECONNECTING || networkState == NetworkState.ERROR) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 16.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(if (networkState == NetworkState.RECONNECTING) Color(0xFFD84315) else Color(0xFFC62828))
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(
+                        color = Color.White,
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = if (networkState == NetworkState.RECONNECTING) "RECONNECTING TO LOBBY..." else "CONNECTION FAILURE! OFFLINE BACKUP ACTIVE.",
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
+            }
         }
 
         // --- Left-Top HUD (Vital stats overlays) ---
@@ -250,6 +284,17 @@ fun GameView(
                 .padding(16.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            if (mp != null) {
+                IconButton(
+                    onClick = { showChatWindow = true },
+                    modifier = Modifier
+                        .background(Color(0x7F0D1B2A), CircleShape)
+                        .testTag("chat_btn")
+                ) {
+                    Icon(Icons.Default.Chat, contentDescription = "Online Multi Chat", tint = Color(0xFF00FFCC))
+                }
+            }
+
             IconButton(
                 onClick = { showPauseMenu = true },
                 modifier = Modifier
@@ -521,6 +566,7 @@ fun GameView(
         // --- PAUSE SAVING MENU ---
         if (showPauseMenu) {
             PauseMenuDialog(
+                isMultiplayer = (mp != null),
                 onDismiss = { showPauseMenu = false },
                 onSave = {
                     showPauseMenu = false
@@ -540,11 +586,20 @@ fun GameView(
                 onDismiss = { showInventoryMenu = false }
             )
         }
+
+        // --- SCREEN ONLINE CHAT SYSTEM ---
+        if (showChatWindow && mp != null) {
+            InGameChatDialog(
+                manager = mp,
+                onDismiss = { showChatWindow = false }
+            )
+        }
     }
 }
 
 @Composable
 fun PauseMenuDialog(
+    isMultiplayer: Boolean = false,
     onDismiss: () -> Unit,
     onSave: () -> Unit,
     onQuit: () -> Unit
@@ -585,9 +640,15 @@ fun PauseMenuDialog(
                     modifier = Modifier.fillMaxWidth().testTag("save_world_btn"),
                     shape = RoundedCornerShape(8.dp)
                 ) {
-                    Icon(Icons.Default.Save, contentDescription = "Save DB")
+                    Icon(
+                        if (isMultiplayer) Icons.Default.CloudUpload else Icons.Default.Save,
+                        contentDescription = "Save DB"
+                    )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("SAVE TO DATABASE", fontWeight = FontWeight.Bold)
+                    Text(
+                        if (isMultiplayer) "SAVE WORLD WITH CLOUD" else "SAVE TO DATABASE",
+                        fontWeight = FontWeight.Bold
+                    )
                 }
 
                 Button(
@@ -795,6 +856,156 @@ fun InventoryAndCraftingDialog(
                                 }
                             }
                         }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun InGameChatDialog(
+    manager: MultiplayerManager,
+    onDismiss: () -> Unit
+) {
+    var txtMsg by remember { mutableStateOf("") }
+    val listState = rememberLazyListState()
+
+    // Scroll to latest message
+    LaunchedEffect(manager.chatMessages.size) {
+        if (manager.chatMessages.isNotEmpty()) {
+            listState.animateScrollToItem(manager.chatMessages.size - 1)
+        }
+    }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF0F1B29)),
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.75f)
+                .padding(12.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp)
+            ) {
+                // Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.Chat, contentDescription = "Chat Logs", tint = Color(0xFF00FFCC))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "ONLINE CHAT (Room: ${manager.currentRoomCode})",
+                        color = Color.White,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.weight(1f)
+                    )
+                    
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, contentDescription = "Close Chat", tint = Color.White)
+                    }
+                }
+
+                Divider(color = Color.DarkGray, modifier = Modifier.padding(vertical = 4.dp))
+
+                // Chat Logs Scroll List
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .background(Color(0x33000000), RoundedCornerShape(6.dp))
+                        .padding(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    items(manager.chatMessages) { chat ->
+                        if (chat.isSystem) {
+                            Text(
+                                text = "📣 ${chat.text}",
+                                color = Color(0xFFFFB74D),
+                                fontSize = 12.sp,
+                                fontFamily = FontFamily.Monospace,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        } else {
+                            val isMe = chat.senderName == manager.playerName
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = if (isMe) Arrangement.End else Arrangement.Start
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(if (isMe) Color(0xFF1B4965) else Color(0xFF2B2D42))
+                                        .padding(8.dp)
+                                ) {
+                                    Column {
+                                        Text(
+                                            text = chat.senderName,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 11.sp,
+                                            color = if (isMe) Color(0xFF00FFCC) else Color(0xFFFF9E00)
+                                        )
+                                        Text(
+                                            text = chat.text,
+                                            color = Color.White,
+                                            fontSize = 13.sp
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Msg Input
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    TextField(
+                        value = txtMsg,
+                        onValueChange = { txtMsg = it },
+                        placeholder = { Text("Compose message...", color = Color.Gray, fontSize = 12.sp) },
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = Color(0x19FFFFFF),
+                            unfocusedContainerColor = Color(0x0CFFFFFF),
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedIndicatorColor = Color.Transparent,
+                            unfocusedIndicatorColor = Color.Transparent
+                        ),
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(8.dp))
+                            .testTag("chat_input"),
+                        singleLine = true
+                    )
+
+                    Button(
+                        onClick = {
+                            if (txtMsg.trim().isNotEmpty()) {
+                                manager.sendChatMessage(txtMsg)
+                                txtMsg = ""
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E676)),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier
+                            .height(52.dp)
+                            .testTag("send_chat_btn")
+                    ) {
+                        Text("SEND", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     }
                 }
             }

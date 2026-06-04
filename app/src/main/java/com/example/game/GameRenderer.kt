@@ -1,6 +1,8 @@
 package com.example.game
 
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -300,6 +302,11 @@ object GameRenderer {
                 // Render Mobs
                 engine.mobs.forEach { mob ->
                     drawMob(scope, mob, blockPx)
+                }
+
+                // Render Remote Players in lobby
+                engine.multiplayerManager?.remotePlayers?.values?.forEach { rp ->
+                    drawRemotePlayer(scope, rp, blockPx, engine.dayTimeSeconds)
                 }
 
                 // Render Player
@@ -660,6 +667,107 @@ object GameRenderer {
                     drawRect(color = Color(0xFFFFB300), topLeft = Offset(mx + mw * 0.35f, my + mh * 0.7f), size = Size(2f, mh * 0.25f))
                     drawRect(color = Color(0xFFFFB300), topLeft = Offset(mx + mw * 0.65f, my + mh * 0.7f), size = Size(2f, mh * 0.25f))
                 }
+            }
+        }
+    }
+
+    fun drawRemotePlayer(scope: DrawScope, rp: RemotePlayer, blockPx: Float, dayTimeSeconds: Float) {
+        with(scope) {
+            val pw = 0.75f * blockPx
+            val ph = 1.8f * blockPx
+            val px = rp.x * blockPx
+            val py = rp.y * blockPx
+
+            val isFacingLeft = rp.facingLeft
+
+            // Draw nickname placard
+            drawIntoCanvas { canvas ->
+                val paint = android.graphics.Paint().apply {
+                    color = android.graphics.Color.WHITE
+                    textSize = blockPx * 0.3f
+                    isAntiAlias = true
+                    textAlign = android.graphics.Paint.Align.CENTER
+                    typeface = android.graphics.Typeface.MONOSPACE
+                }
+                val rectPaint = android.graphics.Paint().apply {
+                    color = android.graphics.Color.argb(140, 15, 27, 41)
+                    style = android.graphics.Paint.Style.FILL
+                }
+                val labelX = px + pw / 2f
+                val labelY = py - blockPx * 0.4f
+                
+                val bounds = android.graphics.Rect()
+                paint.getTextBounds(rp.name, 0, rp.name.length, bounds)
+                canvas.nativeCanvas.drawRect(
+                    labelX - bounds.width() / 2f - 10f,
+                    labelY - bounds.height() - 6f,
+                    labelX + bounds.width() / 2f + 10f,
+                    labelY + 6f,
+                    rectPaint
+                )
+                
+                canvas.nativeCanvas.drawText(rp.name, labelX, labelY, paint)
+            }
+
+            // Head
+            val hdSize = blockPx * 0.5f
+            val hdX = if (isFacingLeft) px + pw * 0.1f else px + pw * 0.4f
+            val hdY = py
+
+            drawRect(
+                color = Color(0xFFFFD1A9), // skin color
+                topLeft = Offset(hdX, hdY),
+                size = Size(hdSize, hdSize)
+            )
+
+            // Indigo hair cap
+            drawRect(
+                color = Color(0xFF673AB7),
+                topLeft = Offset(hdX, hdY),
+                size = Size(hdSize, hdSize * 0.35f)
+            )
+
+            // Torso (Shirt - distinctive forest green shirt)
+            val trY = py + hdSize
+            val trH = ph * 0.45f
+            drawRect(
+                color = Color(0xFF388E3C),
+                topLeft = Offset(px, trY),
+                size = Size(pw, trH)
+            )
+
+            // Legs (pants)
+            val legY = trY + trH
+            val legH = ph - hdSize - trH
+            drawRect(
+                color = Color(0xFF37474F), // dark blue-gray pants
+                topLeft = Offset(px, legY),
+                size = Size(pw, legH)
+            )
+
+            // shoes
+            drawRect(color = Color(0xFF5D4037), topLeft = Offset(px, legY + legH - blockPx * 0.12f), size = Size(pw * 0.45f, blockPx * 0.12f))
+            drawRect(color = Color(0xFF5D4037), topLeft = Offset(px + pw * 0.55f, legY + legH - blockPx * 0.12f), size = Size(pw * 0.45f, blockPx * 0.12f))
+
+            // Tool item
+            val heldItem = ItemType.fromId(rp.heldItemId)
+            if (rp.heldItemId != 0) {
+                val toolColor = when {
+                    heldItem.toolTier == ToolTier.DIAMOND -> Color(0xFF00FFCC)
+                    heldItem.toolTier == ToolTier.IRON -> Color(0xFFE0E0E0)
+                    heldItem.toolTier == ToolTier.STONE -> Color(0xFF9E9E9E)
+                    heldItem.toolTier == ToolTier.WOOD -> Color(0xFF8B5A2B)
+                    heldItem == ItemType.ITEM_TORCH -> Color(0xFFFFCC00)
+                    else -> Color(0xFFFFD54F)
+                }
+
+                val wristX = if (isFacingLeft) px + pw * 0.2f else px + pw * 0.8f
+                val wristY = trY + trH * 0.4f
+                drawRect(
+                    color = toolColor,
+                    topLeft = Offset(wristX - blockPx * 0.05f, wristY),
+                    size = Size(blockPx * 0.1f, blockPx * 0.4f)
+                )
             }
         }
     }

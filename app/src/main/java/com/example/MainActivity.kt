@@ -44,10 +44,12 @@ class MainActivity : ComponentActivity() {
                             MainMenuScreen(
                                 savedWorlds = savedWorlds,
                                 onCreateWorld = { name, seed, mode ->
+                                    gameEngine.multiplayerManager = null
                                     gameEngine.generateNewWorld(name, seed, mode)
                                     activeScreen = "GAME"
                                 },
                                 onLoadWorld = { entity ->
+                                    gameEngine.multiplayerManager = null
                                     gameEngine.loadFromEntity(entity)
                                     activeScreen = "GAME"
                                 },
@@ -55,6 +57,22 @@ class MainActivity : ComponentActivity() {
                                     lifecycleScope.launch {
                                         repository.deleteWorld(entity)
                                     }
+                                },
+                                onHostMultiplayer = { world, code, nickname ->
+                                    val mpManager = com.example.game.MultiplayerManager()
+                                    mpManager.playerName = nickname
+                                    gameEngine.multiplayerManager = mpManager
+                                    gameEngine.loadFromEntity(world)
+                                    mpManager.startMultiplayerLobby(code, true)
+                                    activeScreen = "GAME"
+                                },
+                                onJoinMultiplayer = { code, nickname ->
+                                    val mpManager = com.example.game.MultiplayerManager()
+                                    mpManager.playerName = nickname
+                                    gameEngine.multiplayerManager = mpManager
+                                    mpManager.startMultiplayerLobby(code, false)
+                                    gameEngine.generateNewWorld("World $code", 12345L, "SURVIVAL")
+                                    activeScreen = "GAME"
                                 }
                             )
                         }
@@ -66,11 +84,24 @@ class MainActivity : ComponentActivity() {
                                         val saveEntity = gameEngine.saveToEntity()
                                         val worldId = repository.saveWorld(saveEntity)
                                         gameEngine.worldId = worldId
-                                        gameEngine.triggerPopup("World Save Completed!")
+                                        
+                                        gameEngine.multiplayerManager?.let { mp ->
+                                            mp.uploadMultiplayerCloudSave(
+                                                blocksText = saveEntity.worldBlocksText,
+                                                seed = saveEntity.seed,
+                                                gameMode = saveEntity.gameMode,
+                                                dayTime = saveEntity.dayTime,
+                                                worldName = saveEntity.name
+                                            )
+                                            gameEngine.triggerPopup("Cloud & Local Save Sync complete!")
+                                        } ?: run {
+                                            gameEngine.triggerPopup("World Save Completed!")
+                                        }
                                     }
                                 },
                                 onQuit = {
-                                    // Quit to Main Menu without hard interruption
+                                    gameEngine.multiplayerManager?.disconnect()
+                                    gameEngine.multiplayerManager = null
                                     activeScreen = "MENU"
                                 }
                             )
