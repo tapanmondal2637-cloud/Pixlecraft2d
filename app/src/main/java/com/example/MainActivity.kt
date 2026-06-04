@@ -61,7 +61,7 @@ class MainActivity : ComponentActivity() {
                                 onHostMultiplayer = { world, code, nickname ->
                                     val mpManager = com.example.game.MultiplayerManager()
                                     mpManager.playerName = nickname
-                                    gameEngine.multiplayerManager = mpManager
+                                    gameEngine.initMultiplayerCallbacks(mpManager)
                                     gameEngine.loadFromEntity(world)
                                     mpManager.startMultiplayerLobby(code, true)
                                     activeScreen = "GAME"
@@ -69,7 +69,7 @@ class MainActivity : ComponentActivity() {
                                 onJoinMultiplayer = { code, nickname ->
                                     val mpManager = com.example.game.MultiplayerManager()
                                     mpManager.playerName = nickname
-                                    gameEngine.multiplayerManager = mpManager
+                                    gameEngine.initMultiplayerCallbacks(mpManager)
                                     mpManager.startMultiplayerLobby(code, false)
                                     gameEngine.generateNewWorld("World $code", 12345L, "SURVIVAL")
                                     activeScreen = "GAME"

@@ -72,6 +72,10 @@ class MultiplayerManager {
     var onClientHitEnemy: ((mobId: String, damage: Float) -> Unit)? = null
     // Callback from host updating enemy entities
     var onHostEnemyUpdate: ((mobId: String, x: Float, y: Float, vx: Float, vy: Float, health: Float) -> Unit)? = null
+    // Callback when someone places or breaks a block
+    var onBlockPlacementReceived: ((x: Int, y: Int, blockId: Int) -> Unit)? = null
+    // Callback when a player joins (so host can send world state)
+    var onPlayerJoined: ((playerId: String, name: String) -> Unit)? = null
 
     // Connect to public WebSocket channel
     fun startMultiplayerLobby(room: String, asHost: Boolean, onStarted: () -> Unit = {}) {
@@ -290,16 +294,19 @@ class MultiplayerManager {
                     if (remotePlayers.size >= 3) {
                         return 
                     }
-                    val rp = RemotePlayer(id = sender, name = senderName, x = 60f, y = 15f)
+                    val rp = remotePlayers[sender] ?: RemotePlayer(id = sender, name = senderName, x = 60f, y = 15f)
                     remotePlayers[sender] = rp
                     addChatMessage("System", "$senderName joined the world lobby!", isSystem = true)
 
-                    // Host responds, syncing current state map
+                    // Reply with ACK so they discover us immediately
+                    sendPacket(JSONObject().apply {
+                        put("type", "JOIN_ACK")
+                        put("name", playerName)
+                    })
+
+                    // Host triggers callbacks so it pushes the full map sync
                     if (isHost) {
-                        sendPacket(JSONObject().apply {
-                            put("type", "JOIN_ACK")
-                            put("name", playerName)
-                        })
+                        onPlayerJoined?.invoke(sender, senderName)
                     }
                 }
                 "JOIN_ACK" -> {
@@ -323,14 +330,13 @@ class MultiplayerManager {
                     val tx = json.optInt("x")
                     val ty = json.optInt("y")
                     val progress = json.optDouble("progress").toFloat()
-                    // If complete, clear node
                 }
                 "PLACE" -> {
-                    // Sync a placed block
+                    // Sync a placed or mined block
                     val tx = json.optInt("x")
                     val ty = json.optInt("y")
                     val bId = json.optInt("blockId")
-                    // Handle callback inside engine or drawWorld directly
+                    onBlockPlacementReceived?.invoke(tx, ty, bId)
                 }
                 "CHAT" -> {
                     val msg = json.optString("msg")
@@ -373,6 +379,7 @@ class MultiplayerManager {
             }
         } catch (e: Exception) {
             Log.e("MultiplayerManager", "Incoming packet parse failure: ${e.message}")
+            addChatMessage("NetworkDebug", "Packet sync warning: ${e.message}", isSystem = true)
         }
     }
 

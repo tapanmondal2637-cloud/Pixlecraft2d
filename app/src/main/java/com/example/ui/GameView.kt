@@ -79,10 +79,11 @@ fun GameView(
             when {
                 moveLeftPressed -> {
                     engine.playerVx = -engine.runSpeed
-                    engine.playerVx = -engine.runSpeed
+                    engine.playerFacingLeft = true
                 }
                 moveRightPressed -> {
                     engine.playerVx = engine.runSpeed
+                    engine.playerFacingLeft = false
                 }
                 else -> {
                     // Slide down to zero gently or instant stop

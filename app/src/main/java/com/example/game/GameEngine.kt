@@ -12,11 +12,47 @@ class GameEngine {
 
     var multiplayerManager: MultiplayerManager? = null
 
+    fun getWorldBlocksText(): String {
+        val blocksBuilder = java.lang.StringBuilder()
+        for (x in 0 until width) {
+            for (y in 0 until height) {
+                blocksBuilder.append(worldBlocks[x][y]).append(",")
+            }
+        }
+        return blocksBuilder.toString()
+    }
+
     fun initMultiplayerCallbacks(manager: MultiplayerManager) {
         multiplayerManager = manager
         
         manager.onWorldSyncReceived = { blocksText, seed, mode, daytime ->
             loadWorldFromText(blocksText, seed, mode, daytime)
+        }
+
+        manager.onBlockPlacementReceived = { x, y, blockId ->
+            if (x in 0 until width && y in 0 until height) {
+                worldBlocks[x][y] = blockId
+                val bType = BlockType.fromId(blockId)
+                if (blockId == BlockType.AIR.id) {
+                    spawnMiningSparks(x + 0.5f, y + 0.5f, Color.White)
+                } else {
+                    spawnMiningSparks(x + 0.5f, y + 0.5f, bType.color)
+                }
+            }
+        }
+
+        manager.onPlayerJoined = { clientPlayerId, clientPlayerName ->
+            if (manager.isHost) {
+                val blocksStr = getWorldBlocksText()
+                manager.syncFullWorldToClient(
+                    clientPlayerId = clientPlayerId,
+                    blocksText = blocksStr,
+                    seed = currentSeed,
+                    gameMode = gameMode,
+                    dayTime = dayTimeSeconds
+                )
+                triggerPopup("$clientPlayerName connected! Syncing world...")
+            }
         }
         
         manager.onClientHitEnemy = { mobId, damage ->
@@ -114,6 +150,7 @@ class GameEngine {
     var playerY by mutableFloatStateOf(15f)
     var playerVx by mutableFloatStateOf(0f)
     var playerVy by mutableFloatStateOf(0f)
+    var playerFacingLeft by mutableStateOf(false)
     
     var playerHealth by mutableFloatStateOf(100f)
     val maxHealth = 100f
@@ -427,7 +464,9 @@ class GameEngine {
 
         // Sync coordinates with teammates
         multiplayerManager?.let { mp ->
-            mp.sendMovement(playerX, playerY, playerVx, playerVy, playerVx < 0f, selectedHotbarIndex)
+            val heldItem = inventory.getOrNull(selectedHotbarIndex)
+            val heldItemIdToSend = heldItem?.itemType?.id ?: 0
+            mp.sendMovement(playerX, playerY, playerVx, playerVy, playerFacingLeft, heldItemIdToSend)
         }
 
         // Process Wandering Mob spawns & AI physics

@@ -680,33 +680,61 @@ object GameRenderer {
 
             val isFacingLeft = rp.facingLeft
 
-            // Draw nickname placard
+            // Bobbing green-cyan arrow/diamond indicator above the remote player
+            val bobbing = kotlin.math.sin(dayTimeSeconds * 5.0f).toFloat() * (blockPx * 0.1f)
+            val indX = px + pw / 2f
+            val indY = py - blockPx * 0.8f + bobbing
+
             drawIntoCanvas { canvas ->
+                val pPaint = android.graphics.Paint().apply {
+                    color = android.graphics.Color.parseColor("#00FFCC")
+                    style = android.graphics.Paint.Style.FILL
+                    isAntiAlias = true
+                }
+                val pPath = android.graphics.Path().apply {
+                    moveTo(indX, indY)
+                    lineTo(indX - blockPx * 0.12f, indY - blockPx * 0.15f)
+                    lineTo(indX, indY - blockPx * 0.3f)
+                    lineTo(indX + blockPx * 0.12f, indY - blockPx * 0.15f)
+                    close()
+                }
+                canvas.nativeCanvas.drawPath(pPath, pPaint)
+            }
+
+            // Draw nickname placard with Live Connection status
+            drawIntoCanvas { canvas ->
+                val labelText = "● ${rp.name} [LIVE]"
                 val paint = android.graphics.Paint().apply {
                     color = android.graphics.Color.WHITE
-                    textSize = blockPx * 0.3f
+                    textSize = blockPx * 0.28f
                     isAntiAlias = true
                     textAlign = android.graphics.Paint.Align.CENTER
                     typeface = android.graphics.Typeface.MONOSPACE
                 }
                 val rectPaint = android.graphics.Paint().apply {
-                    color = android.graphics.Color.argb(140, 15, 27, 41)
+                    color = android.graphics.Color.argb(160, 10, 25, 41)
                     style = android.graphics.Paint.Style.FILL
                 }
                 val labelX = px + pw / 2f
                 val labelY = py - blockPx * 0.4f
                 
                 val bounds = android.graphics.Rect()
-                paint.getTextBounds(rp.name, 0, rp.name.length, bounds)
+                paint.getTextBounds(labelText, 0, labelText.length, bounds)
                 canvas.nativeCanvas.drawRect(
-                    labelX - bounds.width() / 2f - 10f,
-                    labelY - bounds.height() - 6f,
-                    labelX + bounds.width() / 2f + 10f,
-                    labelY + 6f,
+                    labelX - bounds.width() / 2f - 12f,
+                    labelY - bounds.height() - 8f,
+                    labelX + bounds.width() / 2f + 12f,
+                    labelY + 8f,
                     rectPaint
                 )
                 
-                canvas.nativeCanvas.drawText(rp.name, labelX, labelY, paint)
+                // Color the indicator dot green
+                val greenPaint = android.graphics.Paint(paint).apply {
+                    color = android.graphics.Color.parseColor("#4CAF50")
+                    textAlign = android.graphics.Paint.Align.LEFT
+                }
+                
+                canvas.nativeCanvas.drawText(labelText, labelX, labelY, paint)
             }
 
             // Head
